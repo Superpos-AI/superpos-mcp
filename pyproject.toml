@@ -1,0 +1,33 @@
+[project]
+name = "superpos-mcp"
+version = "0.1.0"
+description = "MCP server that connects any coding agent (Claude Code, Codex, Cursor, Gemini CLI, ...) to a Superpos cloud workspace."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Superpos" }]
+keywords = ["mcp", "superpos", "agents", "orchestration"]
+dependencies = [
+    "mcp>=1.2,<2",
+    "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+superpos-mcp = "superpos_mcp.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/superpos_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
