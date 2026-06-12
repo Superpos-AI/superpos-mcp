@@ -1,5 +1,4 @@
 import pytest
-
 from fake_superpos import FakeSuperpos
 
 

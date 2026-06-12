@@ -58,11 +58,11 @@ class SuperposApi:
 
         try:
             body = response.json()
-        except Exception:
+        except Exception as exc:
             raise SuperposError(
                 f"HTTP {response.status_code}: {response.text[:200]}",
                 status_code=response.status_code,
-            )
+            ) from exc
 
         if response.status_code >= 400:
             errors = body.get("errors") if isinstance(body, dict) else None
@@ -114,11 +114,11 @@ class SuperposApi:
         response = self._http.request(method, path, json=json)
         try:
             body = response.json()
-        except Exception:
+        except Exception as exc:
             raise SuperposError(
                 f"HTTP {response.status_code}: {response.text[:200]}",
                 status_code=response.status_code,
-            )
+            ) from exc
         if response.status_code >= 400:
             raise SuperposError(
                 (body.get("message") if isinstance(body, dict) else None)

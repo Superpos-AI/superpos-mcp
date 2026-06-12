@@ -59,7 +59,9 @@ async def main():
                 print(f"task      : created {task['id']} ({task['status']})")
                 claimed = await call(session, "superpos_claim_task", {"task_id": task["id"]})
                 print(f"            claimed -> {claimed['status'] if claimed else 'FAILED'}")
-                await call(session, "superpos_task_progress", {"task_id": task["id"], "progress": 50, "status_message": "halfway"})
+                await call(session, "superpos_task_progress", {
+                    "task_id": task["id"], "progress": 50, "status_message": "halfway",
+                })
                 done = await call(session, "superpos_complete_task", {
                     "task_id": task["id"],
                     "result": {"verdict": "superpos-mcp live test passed"},
@@ -74,7 +76,9 @@ async def main():
             })
             if entry:
                 print(f"knowledge : created {entry['id']} key={entry['key']}")
-                hits = await call(session, "superpos_search_knowledge", {"query": "mcp connector self test", "limit": 3})
+                hits = await call(session, "superpos_search_knowledge", {
+                    "query": "mcp connector self test", "limit": 3,
+                })
                 print(f"            search returned {len(hits or [])} hit(s)")
 
             events = await call(session, "superpos_poll_events", {"limit": 5})
