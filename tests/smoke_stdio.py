@@ -10,10 +10,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+from fake_superpos import FakeSuperpos
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
-from fake_superpos import FakeSuperpos
 
 
 async def main() -> None:

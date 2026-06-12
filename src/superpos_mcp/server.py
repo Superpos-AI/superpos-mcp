@@ -16,9 +16,8 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from .client import SuperposApi, SuperposError
+from .client import SuperposApi
 from .config import Config
-
 
 _TTL_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 

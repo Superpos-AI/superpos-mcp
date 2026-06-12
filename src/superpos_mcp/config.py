@@ -58,7 +58,7 @@ class Config:
     _from_env: set[str] = field(default_factory=set, repr=False)
 
     @classmethod
-    def load(cls) -> "Config":
+    def load(cls) -> Config:
         cfg = cls()
         stored = read_credentials()
         for key in ("base_url", "token", "refresh_token", "hive_id", "agent_id", "secret"):

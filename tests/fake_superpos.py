@@ -276,7 +276,7 @@ class FakeSuperpos:
         host, port = self.server.server_address[:2]
         return f"http://{host}:{port}"
 
-    def __enter__(self) -> "FakeSuperpos":
+    def __enter__(self) -> FakeSuperpos:
         self.thread.start()
         return self
 
