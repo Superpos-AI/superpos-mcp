@@ -29,6 +29,12 @@ class FakeState:
         self.knowledge: dict[str, dict[str, Any]] = {}
         self.events: list[dict[str, Any]] = []
         self.schedules: dict[str, dict[str, Any]] = {}
+        self.issue_types = {
+            "type-task": {"id": "type-task", "key": "task", "label": "Task", "closure_policy": "agent_self_close"},
+            "type-bug": {"id": "type-bug", "key": "bug", "label": "Bug", "closure_policy": "agent_self_close"},
+        }
+        self.issues: dict[str, dict[str, Any]] = {}
+        self.tracks: dict[str, dict[str, Any]] = {}  # keyed by slug
         self.counter = 0
         self.requests: list[tuple[str, str]] = []  # (method, path) log
         self.last_registration_token: str | None = None
@@ -36,6 +42,11 @@ class FakeState:
     def next_id(self, prefix: str) -> str:
         self.counter += 1
         return f"{prefix}-{self.counter}"
+
+
+ISSUE_STATES = ["open", "in_progress", "blocked", "awaiting_review", "done", "cancelled"]
+ISSUE_TERMINAL_STATES = {"done", "cancelled"}
+TRACK_STATES = ["planning", "active", "paused", "done", "archived"]
 
 
 def make_handler(state: FakeState):
@@ -242,6 +253,142 @@ def make_handler(state: FakeState):
 
             if rest == "agents" and method == "GET":
                 return self._send(200, [state.agent])
+
+            # ---- issues / issue-types ----
+            if rest == "issue-types" and method == "GET":
+                return self._send(200, list(state.issue_types.values()))
+
+            if rest == "issues" and method == "GET":
+                issues = list(state.issues.values())
+                if params.get("state"):
+                    if params["state"] not in ISSUE_STATES:
+                        return self._send(400, errors=[{"code": "invalid_filter", "message": "Invalid state filter."}])
+                    issues = [i for i in issues if i["state"] == params["state"]]
+                if params.get("issue_type_id"):
+                    issues = [i for i in issues if i["issue_type_id"] == params["issue_type_id"]]
+                if params.get("assignee_id"):
+                    issues = [i for i in issues if i.get("assignee_id") == params["assignee_id"]]
+                if params.get("q"):
+                    q = params["q"].lower().replace("+", " ").replace("%20", " ")
+                    issues = [i for i in issues if q in i["title"].lower()]
+                return self._send(200, issues[: int(params.get("per_page", 15))])
+
+            if rest == "issues" and method == "POST":
+                if body.get("issue_type_id") not in state.issue_types:
+                    return self._send(422, errors=[{"code": "validation_error", "message": "Unknown issue_type_id.", "field": "issue_type_id"}])
+                issue = {
+                    "id": state.next_id("issue"),
+                    "hive_id": hive,
+                    "number": len(state.issues) + 1,
+                    "title": body["title"],
+                    "description": body.get("description"),
+                    "state": "open",
+                    "issue_type_id": body["issue_type_id"],
+                    "issue_type": state.issue_types[body["issue_type_id"]],
+                    "assignee_type": body.get("assignee_type"),
+                    "assignee_id": body.get("assignee_id"),
+                    "metadata": body.get("metadata"),
+                    "track_id": None,
+                    "closure_reason": None,
+                    "allowed_transitions": ["in_progress", "cancelled"],
+                    "tasks": [], "dependencies": [], "approvals": [],
+                }
+                state.issues[issue["id"]] = issue
+                return self._send(201, issue)
+
+            im = re.match(r"^issues/([^/]+)(?:/(\w+))?$", rest)
+            if im:
+                issue_id, action = im.group(1), im.group(2)
+                issue = state.issues.get(issue_id)
+                if not issue:
+                    return self._send(404, errors=[{"code": "not_found", "message": "Issue not found."}])
+                if action is None and method == "GET":
+                    return self._send(200, issue)
+                if action is None and method == "PATCH":
+                    for field in ("title", "description", "issue_type_id", "assignee_type", "assignee_id", "metadata"):
+                        if field in body:
+                            issue[field] = body[field]
+                    if "issue_type_id" in body:
+                        issue["issue_type"] = state.issue_types.get(body["issue_type_id"], issue["issue_type"])
+                    return self._send(200, issue)
+                if action == "transition" and method == "POST":
+                    if body.get("to") not in ISSUE_STATES:
+                        return self._send(422, errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}])
+                    if issue["state"] in ISSUE_TERMINAL_STATES:
+                        return self._send(409, errors=[{"code": "invalid_transition", "message": "Issue is in a terminal state."}])
+                    issue["state"] = body["to"]
+                    return self._send(200, issue)
+                if action == "close" and method == "POST":
+                    if issue["state"] in ISSUE_TERMINAL_STATES:
+                        return self._send(409, errors=[{"code": "invalid_transition", "message": "Issue already closed."}])
+                    issue.update(state="done", closure_reason=body.get("reason"))
+                    return self._send(200, issue)
+
+            # ---- tracks ----
+            if rest == "tracks" and method == "GET":
+                return self._send(200, [
+                    {k: v for k, v in t.items() if k != "spec"} for t in state.tracks.values()
+                ])
+
+            if rest == "tracks" and method == "POST":
+                if body["slug"] in state.tracks:
+                    return self._send(422, errors=[{"code": "validation_error", "message": "Slug already taken.", "field": "slug"}])
+                track = {
+                    "id": state.next_id("track"),
+                    "hive_id": hive,
+                    "slug": body["slug"],
+                    "name": body["name"],
+                    "description": body.get("description"),
+                    "spec": body.get("spec"),
+                    "state": body.get("state") or "planning",
+                }
+                state.tracks[track["slug"]] = track
+                return self._send(201, track)
+
+            km2 = re.match(r"^tracks/([^/]+)(?:/(.+))?$", rest)
+            if km2:
+                slug, sub = km2.group(1), km2.group(2)
+                track = state.tracks.get(slug)
+                if not track:
+                    return self._send(404, errors=[{"code": "not_found", "message": "Track not found."}])
+                if sub is None and method == "GET":
+                    return self._send(200, track)
+                if sub is None and method == "PATCH":
+                    for field in ("name", "description", "spec"):
+                        if field in body:
+                            track[field] = body[field]
+                    return self._send(200, track)
+                if sub == "transition" and method == "POST":
+                    if body.get("to") not in TRACK_STATES:
+                        return self._send(422, errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}])
+                    track["state"] = body["to"]
+                    return self._send(200, track)
+                if sub == "issues" and method == "GET":
+                    linked = [i for i in state.issues.values() if i.get("track_id") == track["id"]]
+                    return self._send(200, linked[: int(params.get("per_page", 15))])
+                if sub == "issues" and method == "POST":
+                    issue = state.issues.get(body.get("issue_id"))
+                    if not issue:
+                        return self._send(422, errors=[{"code": "validation_error", "message": "Unknown issue_id.", "field": "issue_id"}])
+                    issue["track_id"] = track["id"]
+                    return self._send(200, {"track_id": track["id"], "issue_id": issue["id"]})
+                lm = re.match(r"^issues/([^/]+)$", sub or "")
+                if lm and method == "DELETE":
+                    issue = state.issues.get(lm.group(1))
+                    if issue and issue.get("track_id") == track["id"]:
+                        issue["track_id"] = None
+                    self.send_response(204)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return None
+
+            # ---- topology ----
+            if rest == "topology" and method == "GET":
+                return self._send(200, {
+                    "timeframe": params.get("timeframe", "24h"),
+                    "nodes": [{"id": state.agent["id"], "type": "agent", "label": state.agent["name"]}],
+                    "edges": [],
+                })
 
             return self._send(404, errors=[{"code": "not_found", "message": f"No hive route {method} {rest}"}])
 

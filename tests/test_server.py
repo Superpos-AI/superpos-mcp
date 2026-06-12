@@ -42,6 +42,12 @@ async def test_lists_all_tools(fake):
         "superpos_search_knowledge", "superpos_list_knowledge",
         "superpos_get_knowledge", "superpos_create_knowledge", "superpos_update_knowledge",
         "superpos_list_schedules", "superpos_create_schedule", "superpos_delete_schedule",
+        "superpos_list_issues", "superpos_get_issue", "superpos_create_issue",
+        "superpos_update_issue", "superpos_transition_issue", "superpos_close_issue",
+        "superpos_list_tracks", "superpos_get_track", "superpos_create_track",
+        "superpos_update_track", "superpos_transition_track",
+        "superpos_link_issue", "superpos_unlink_issue",
+        "superpos_hive_map",
         "superpos_list_hives", "superpos_hive_agents",
         "superpos_get_persona", "superpos_update_memory",
     }
@@ -160,6 +166,116 @@ async def test_schedules(fake):
         assert deleted["deleted"] is True
         _, schedules = await call(client, "superpos_list_schedules")
         assert schedules == []
+
+
+async def test_issue_lifecycle(fake):
+    server = make_server(fake)
+    async with client_session(server._mcp_server) as client:
+        # issue_type accepts a key, not just an id
+        _, issue = await call(client, "superpos_create_issue", {
+            "title": "Login button explodes",
+            "issue_type": "bug",
+            "description": "Repro: click it.",
+            "metadata": {"severity": "high"},
+        })
+        assert issue["state"] == "open"
+        assert issue["issue_type_id"] == "type-bug"
+
+        _, open_issues = await call(client, "superpos_list_issues", {"state": "open"})
+        assert [i["id"] for i in open_issues] == [issue["id"]]
+
+        _, by_title = await call(client, "superpos_list_issues", {"query": "explodes"})
+        assert [i["id"] for i in by_title] == [issue["id"]]
+
+        _, updated = await call(client, "superpos_update_issue", {
+            "issue_id": issue["id"], "title": "Login button crashes",
+        })
+        assert updated["title"] == "Login button crashes"
+        assert updated["description"] == "Repro: click it."  # untouched
+
+        _, moved = await call(client, "superpos_transition_issue", {
+            "issue_id": issue["id"], "to": "in_progress",
+        })
+        assert moved["state"] == "in_progress"
+
+        _, closed = await call(client, "superpos_close_issue", {
+            "issue_id": issue["id"], "reason": "fixed in #42",
+        })
+        assert closed["state"] == "done"
+        assert closed["closure_reason"] == "fixed in #42"
+
+        # Terminal issues reject further transitions.
+        result, _ = await call(client, "superpos_transition_issue", {
+            "issue_id": issue["id"], "to": "open",
+        })
+        assert result.isError
+
+        _, fetched = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
+        assert fetched["state"] == "done"
+
+
+async def test_create_issue_assignee_shorthand(fake):
+    server = make_server(fake)
+    async with client_session(server._mcp_server) as client:
+        _, issue = await call(client, "superpos_create_issue", {
+            "title": "Assigned work",
+            "assignee_type": "agent",
+            "assignee_id": "agent-1",
+        })
+    assert issue["assignee_type"] == "App\\Models\\Agent"
+    assert issue["assignee_id"] == "agent-1"
+
+
+async def test_track_lifecycle(fake):
+    server = make_server(fake)
+    async with client_session(server._mcp_server) as client:
+        _, track = await call(client, "superpos_create_track", {
+            "slug": "agent-hive-awareness",
+            "name": "Agent hive awareness",
+            "spec": "# Plan\nGive agents eyes.",
+        })
+        assert track["state"] == "planning"
+
+        _, tracks = await call(client, "superpos_list_tracks")
+        assert [t["slug"] for t in tracks] == ["agent-hive-awareness"]
+        assert "spec" not in tracks[0]  # list omits the heavy spec document
+
+        _, issue = await call(client, "superpos_create_issue", {"title": "Phase 1"})
+        _, link = await call(client, "superpos_link_issue", {
+            "track_slug": "agent-hive-awareness", "issue_id": issue["id"],
+        })
+        assert link["issue_id"] == issue["id"]
+
+        _, full = await call(client, "superpos_get_track", {"slug": "agent-hive-awareness"})
+        assert full["spec"] == "# Plan\nGive agents eyes."
+        assert [i["id"] for i in full["issues"]] == [issue["id"]]
+
+        _, renamed = await call(client, "superpos_update_track", {
+            "slug": "agent-hive-awareness", "name": "Hive awareness",
+        })
+        assert renamed["name"] == "Hive awareness"
+
+        _, active = await call(client, "superpos_transition_track", {
+            "slug": "agent-hive-awareness", "to": "active",
+        })
+        assert active["state"] == "active"
+
+        _, unlinked = await call(client, "superpos_unlink_issue", {
+            "track_slug": "agent-hive-awareness", "issue_id": issue["id"],
+        })
+        assert unlinked["unlinked"] is True
+
+        _, empty = await call(client, "superpos_get_track", {"slug": "agent-hive-awareness"})
+        assert empty["issues"] == []
+
+
+async def test_hive_map(fake):
+    server = make_server(fake)
+    async with client_session(server._mcp_server) as client:
+        _, topology = await call(client, "superpos_hive_map", {"timeframe": "7d"})
+    assert topology["timeframe"] == "7d"
+    assert {n["type"] for n in topology["nodes"]} == {"agent"}
+    assert topology["edges"] == []
 
 
 async def test_expired_token_recovers_transparently(fake):

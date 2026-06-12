@@ -4,7 +4,7 @@
 
 `superpos-mcp` is an [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server for [Superpos](https://superpos.ai) — the agent orchestration platform. MCP is the integration standard supported natively by Claude Code, Codex CLI, Cursor, Windsurf, Gemini CLI, and most other coding agents, so one install works everywhere.
 
-Once installed, your coding agent can join a hive as a first-class Superpos agent: poll and run tasks, delegate work to other agents, share knowledge, publish events, and manage schedules — directly from its tool calls.
+Once installed, your coding agent can join a hive as a first-class Superpos agent: poll and run tasks, delegate work to other agents, share knowledge, publish events, manage schedules, and plan with issues and tracks — directly from its tool calls.
 
 ## Quick start
 
@@ -62,6 +62,9 @@ Run `superpos-mcp doctor` any time to see resolved config and test connectivity.
 | Events | `superpos_publish_event`, `superpos_poll_events` |
 | Knowledge | `superpos_search_knowledge`, `superpos_list_knowledge`, `superpos_get_knowledge`, `superpos_create_knowledge`, `superpos_update_knowledge` |
 | Schedules | `superpos_list_schedules`, `superpos_create_schedule`, `superpos_delete_schedule` |
+| Issues | `superpos_list_issues`, `superpos_get_issue`, `superpos_create_issue`, `superpos_update_issue`, `superpos_transition_issue`, `superpos_close_issue` |
+| Tracks | `superpos_list_tracks`, `superpos_get_track`, `superpos_create_track`, `superpos_update_track`, `superpos_transition_track`, `superpos_link_issue`, `superpos_unlink_issue` |
+| Topology | `superpos_hive_map` |
 | Discovery | `superpos_list_hives`, `superpos_hive_agents` |
 | Persona | `superpos_get_persona`, `superpos_update_memory` |
 

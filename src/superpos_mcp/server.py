@@ -22,6 +22,13 @@ from .config import Config
 
 _TTL_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
+# The API wants Eloquent model class names for assignees; agents shouldn't.
+_ASSIGNEE_TYPES = {"agent": "App\\Models\\Agent", "user": "App\\Models\\User"}
+
+
+def assignee_model(value: str) -> str:
+    return _ASSIGNEE_TYPES.get(value.strip().lower(), value)
+
 
 def ttl_to_timestamp(ttl: str) -> str:
     """Convert duration shorthand ('30m', '1h', '7d') to the ISO8601 expiry
@@ -43,9 +50,19 @@ def create_server(config: Config | None = None) -> FastMCP:
             "Tools for working with a Superpos cloud workspace (agent orchestration "
             "platform). Use superpos_whoami first to confirm connectivity. Tasks are "
             "the unit of work: poll → claim → progress → complete/fail. The knowledge "
-            "store shares context between agents; events broadcast notifications."
+            "store shares context between agents; events broadcast notifications. "
+            "Issues and tracks are the planning surface (issues group into tracks); "
+            "superpos_hive_map shows the hive topology."
         ),
     )
+
+    def resolve_issue_type(value: str, hive_id: str | None) -> str:
+        """Accept an issue-type key ('task', 'bug') or id; return the id."""
+        types = api.request("GET", f"/api/v1/hives/{api.hive(hive_id)}/issue-types") or []
+        for issue_type in types:
+            if value in (issue_type.get("id"), issue_type.get("key")):
+                return issue_type["id"]
+        return value  # assume it's an id; the server validates
 
     # ------------------------------------------------------------------
     # Identity / connectivity
@@ -339,6 +356,263 @@ def create_server(config: Config | None = None) -> FastMCP:
         """Delete a schedule so it stops creating tasks."""
         api.request("DELETE", f"/api/v1/hives/{api.hive(hive_id)}/schedules/{schedule_id}")
         return {"deleted": True, "schedule_id": schedule_id}
+
+    # ------------------------------------------------------------------
+    # Issues (planning surface)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def superpos_list_issues(
+        state: str | None = None,
+        issue_type_id: str | None = None,
+        assignee_id: str | None = None,
+        query: str | None = None,
+        per_page: int = 15,
+        hive_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List issues in the hive's planning surface, newest-updated first.
+        state: open, in_progress, blocked, awaiting_review, done, or cancelled.
+        query filters by title substring."""
+        params: dict[str, Any] = {"per_page": per_page}
+        if state:
+            params["state"] = state
+        if issue_type_id:
+            params["issue_type_id"] = issue_type_id
+        if assignee_id:
+            params["assignee_id"] = assignee_id
+        if query:
+            params["q"] = query
+        return api.request(
+            "GET", f"/api/v1/hives/{api.hive(hive_id)}/issues", params=params
+        ) or []
+
+    @mcp.tool()
+    def superpos_get_issue(issue_id: str, hive_id: str | None = None) -> dict[str, Any]:
+        """Get a single issue with its type, linked tasks, dependencies, approvals,
+        and allowed_transitions (the states it can move to next)."""
+        return api.request("GET", f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}")
+
+    @mcp.tool()
+    def superpos_create_issue(
+        title: str,
+        issue_type: str = "task",
+        description: str | None = None,
+        assignee_type: str | None = None,
+        assignee_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an issue. issue_type is an issue-type key (e.g. 'task', 'bug') or
+        id. To assign, pass assignee_type ('agent' or 'user') with assignee_id."""
+        body: dict[str, Any] = {
+            "title": title,
+            "issue_type_id": resolve_issue_type(issue_type, hive_id),
+        }
+        if description is not None:
+            body["description"] = description
+        if assignee_type and assignee_id:
+            body["assignee_type"] = assignee_model(assignee_type)
+            body["assignee_id"] = assignee_id
+        if metadata is not None:
+            body["metadata"] = metadata
+        return api.request("POST", f"/api/v1/hives/{api.hive(hive_id)}/issues", json=body)
+
+    @mcp.tool()
+    def superpos_update_issue(
+        issue_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        issue_type: str | None = None,
+        assignee_type: str | None = None,
+        assignee_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update an issue's fields (only the ones provided). Use
+        superpos_transition_issue to change state."""
+        body: dict[str, Any] = {}
+        if title is not None:
+            body["title"] = title
+        if description is not None:
+            body["description"] = description
+        if issue_type is not None:
+            body["issue_type_id"] = resolve_issue_type(issue_type, hive_id)
+        if assignee_type and assignee_id:
+            body["assignee_type"] = assignee_model(assignee_type)
+            body["assignee_id"] = assignee_id
+        if metadata is not None:
+            body["metadata"] = metadata
+        return api.request(
+            "PATCH", f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}", json=body
+        )
+
+    @mcp.tool()
+    def superpos_transition_issue(
+        issue_id: str,
+        to: str,
+        reason: str | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Move an issue to a new state: open, in_progress, blocked,
+        awaiting_review, done, or cancelled. Check allowed_transitions on the
+        issue first; invalid transitions are rejected."""
+        body: dict[str, Any] = {"to": to}
+        if reason:
+            body["reason"] = reason
+        return api.request(
+            "POST",
+            f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}/transition",
+            json=body,
+        )
+
+    @mcp.tool()
+    def superpos_close_issue(
+        issue_id: str,
+        reason: str | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Close an issue as done, optionally recording a closure reason. Subject to
+        the issue type's closure policy."""
+        body: dict[str, Any] = {}
+        if reason:
+            body["reason"] = reason
+        return api.request(
+            "POST",
+            f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}/close",
+            json=body or None,
+        )
+
+    # ------------------------------------------------------------------
+    # Tracks (multi-issue containers)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def superpos_list_tracks(hive_id: str | None = None) -> list[dict[str, Any]]:
+        """List tracks — first-class containers that group related issues into a
+        body of work (like an epic). States: planning, active, paused, done,
+        archived."""
+        return api.request("GET", f"/api/v1/hives/{api.hive(hive_id)}/tracks") or []
+
+    @mcp.tool()
+    def superpos_get_track(
+        slug: str,
+        include_issues: bool = True,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get a track by slug, including its full spec document and (by default)
+        the issues linked to it."""
+        track = api.request("GET", f"/api/v1/hives/{api.hive(hive_id)}/tracks/{slug}")
+        if include_issues:
+            track["issues"] = api.request(
+                "GET",
+                f"/api/v1/hives/{api.hive(hive_id)}/tracks/{slug}/issues",
+                params={"per_page": 100},
+            ) or []
+        return track
+
+    @mcp.tool()
+    def superpos_create_track(
+        slug: str,
+        name: str,
+        description: str | None = None,
+        spec: str | None = None,
+        state: str | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a track. slug is a lowercase kebab-case identifier (e.g.
+        'agent-hive-awareness'); spec is an optional long-form plan document
+        (markdown)."""
+        body: dict[str, Any] = {"slug": slug, "name": name}
+        if description is not None:
+            body["description"] = description
+        if spec is not None:
+            body["spec"] = spec
+        if state:
+            body["state"] = state
+        return api.request("POST", f"/api/v1/hives/{api.hive(hive_id)}/tracks", json=body)
+
+    @mcp.tool()
+    def superpos_update_track(
+        slug: str,
+        name: str | None = None,
+        description: str | None = None,
+        spec: str | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a track's name, description, or spec document (only the fields
+        provided). Use superpos_transition_track to change state."""
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if description is not None:
+            body["description"] = description
+        if spec is not None:
+            body["spec"] = spec
+        return api.request(
+            "PATCH", f"/api/v1/hives/{api.hive(hive_id)}/tracks/{slug}", json=body
+        )
+
+    @mcp.tool()
+    def superpos_transition_track(
+        slug: str,
+        to: str,
+        reason: str | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Move a track to a new state: planning, active, paused, done, or
+        archived."""
+        body: dict[str, Any] = {"to": to}
+        if reason:
+            body["reason"] = reason
+        return api.request(
+            "POST", f"/api/v1/hives/{api.hive(hive_id)}/tracks/{slug}/transition", json=body
+        )
+
+    @mcp.tool()
+    def superpos_link_issue(
+        track_slug: str,
+        issue_id: str,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Link an existing issue to a track so it shows up in the track's body of
+        work."""
+        return api.request(
+            "POST",
+            f"/api/v1/hives/{api.hive(hive_id)}/tracks/{track_slug}/issues",
+            json={"issue_id": issue_id},
+        )
+
+    @mcp.tool()
+    def superpos_unlink_issue(
+        track_slug: str,
+        issue_id: str,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Remove an issue from a track (the issue itself is not deleted)."""
+        api.request(
+            "DELETE",
+            f"/api/v1/hives/{api.hive(hive_id)}/tracks/{track_slug}/issues/{issue_id}",
+        )
+        return {"unlinked": True, "track_slug": track_slug, "issue_id": issue_id}
+
+    # ------------------------------------------------------------------
+    # Topology
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def superpos_hive_map(
+        timeframe: str = "24h",
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Point-in-time map of the hive graph for drill-down: nodes (agents,
+        services, inboxes, schedules) and edges (task flow, proxy access, inbox and
+        schedule triggers, cross-hive links). timeframe bounds activity-derived
+        edges, e.g. '1h', '24h', '7d'."""
+        return api.request(
+            "GET",
+            f"/api/v1/hives/{api.hive(hive_id)}/topology",
+            params={"timeframe": timeframe},
+        )
 
     # ------------------------------------------------------------------
     # Discovery
