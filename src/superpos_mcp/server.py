@@ -533,7 +533,7 @@ def create_server(config: Config | None = None) -> FastMCP:
         hive_id: str | None = None,
     ) -> dict[str, Any]:
         """Declare that this issue depends on another. kind is the relationship
-        (e.g. 'blocks', 'related_to'). Returns the created dependency row."""
+        (one of 'blocks', 'related'). Returns the created dependency row."""
         return api.request(
             "POST",
             f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}/dependencies",

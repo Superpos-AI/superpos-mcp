@@ -260,6 +260,16 @@ async def test_issue_types_link_approval_and_dependencies(fake):
         _, after = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
         assert after["dependencies"] == []
 
+        # The non-default valid kind ('related') is accepted by the backend.
+        _, related = await call(client, "superpos_add_issue_dependency", {
+            "issue_id": issue["id"], "depends_on_issue_id": other["id"],
+            "kind": "related",
+        })
+        assert related["kind"] == "related"
+        await call(client, "superpos_remove_issue_dependency", {
+            "issue_id": issue["id"], "dependency_id": related["id"],
+        })
+
         # Approval is only valid from in_progress/blocked; it moves the issue to blocked.
         await call(client, "superpos_transition_issue", {
             "issue_id": issue["id"], "to": "in_progress",

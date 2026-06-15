@@ -368,6 +368,16 @@ def make_handler(state: FakeState):
                     issue["state"] = "blocked"
                     return self._send(201, approval)
                 if action == "dependencies" and method == "POST":
+                    # Mirror the backend IssueDependency::DEPENDENCY_KINDS allowlist.
+                    if body["kind"] not in ("blocks", "related"):
+                        return self._send(
+                            422,
+                            errors=[{
+                                "code": "validation_error",
+                                "message": "Invalid dependency kind.",
+                                "field": "kind",
+                            }],
+                        )
                     dep = {
                         "id": state.next_id("dep"),
                         "depends_on_issue_id": body["depends_on_issue_id"],
