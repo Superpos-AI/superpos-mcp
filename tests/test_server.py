@@ -241,7 +241,11 @@ async def test_issue_types_link_approval_and_dependencies(fake):
         _, linked = await call(client, "superpos_link_task_to_issue", {
             "issue_id": issue["id"], "task_id": task["id"],
         })
-        assert [t["id"] for t in linked["tasks"]] == [task["id"]]
+        # link-task returns a link row, not the full issue; refresh via get_issue.
+        assert linked["issue_id"] == issue["id"]
+        assert "id" in linked
+        _, refreshed = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
+        assert [t["id"] for t in refreshed["tasks"]] == [task["id"]]
 
         # A dependency on another issue, then remove it.
         _, other = await call(client, "superpos_create_issue", {"title": "Prereq"})
@@ -263,9 +267,16 @@ async def test_issue_types_link_approval_and_dependencies(fake):
         _, escalated = await call(client, "superpos_request_issue_approval", {
             "issue_id": issue["id"], "summary": "Needs human sign-off",
             "recommended_action": "approve_closure",
+            "risks": ["data loss", "downtime"],
         })
-        assert escalated["state"] == "blocked"
-        assert escalated["approvals"][0]["status"] == "pending"
+        # request-approval returns the approval row, not the full issue.
+        assert escalated["issue_id"] == issue["id"]
+        assert escalated["status"] == "pending"
+        assert escalated["risks"] == ["data loss", "downtime"]
+        # The mutation moves the issue to blocked; refresh via get_issue to see it.
+        _, after_approval = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
+        assert after_approval["state"] == "blocked"
+        assert after_approval["approvals"][0]["status"] == "pending"
 
 
 async def test_track_lifecycle(fake):

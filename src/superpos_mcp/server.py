@@ -508,7 +508,7 @@ def create_server(config: Config | None = None) -> FastMCP:
         issue_id: str,
         summary: str,
         recommended_action: str | None = None,
-        risks: str | None = None,
+        risks: list[str] | None = None,
         hive_id: str | None = None,
     ) -> dict[str, Any]:
         """Escalate an issue for human approval (e.g. before closing risky work).

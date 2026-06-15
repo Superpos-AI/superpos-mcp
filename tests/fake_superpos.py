@@ -343,22 +343,27 @@ def make_handler(state: FakeState):
                     return self._send(200, issue)
                 if action == "link-task" and method == "POST":
                     issue["tasks"].append({"id": body["task_id"]})
-                    return self._send(200, issue)
+                    return self._send(201, {
+                        "id": state.next_id("link"),
+                        "issue_id": issue["id"],
+                    })
                 if action == "request-approval" and method == "POST":
                     if issue["state"] not in ("in_progress", "blocked"):
                         return self._send(
                             422,
                             errors=[{"code": "invalid_state", "message": "Issue must be in_progress or blocked."}],
                         )
-                    issue["approvals"].append({
+                    approval = {
                         "id": state.next_id("appr"),
+                        "issue_id": issue["id"],
                         "summary": body["summary"],
                         "recommended_action": body.get("recommended_action"),
                         "risks": body.get("risks"),
                         "status": "pending",
-                    })
+                    }
+                    issue["approvals"].append(approval)
                     issue["state"] = "blocked"
-                    return self._send(201, issue)
+                    return self._send(201, approval)
                 if action == "dependencies" and method == "POST":
                     dep = {
                         "id": state.next_id("dep"),
