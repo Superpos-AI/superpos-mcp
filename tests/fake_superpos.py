@@ -296,9 +296,9 @@ def make_handler(state: FakeState):
                 state.issues[issue["id"]] = issue
                 return self._send(201, issue)
 
-            im = re.match(r"^issues/([^/]+)(?:/(\w+))?$", rest)
+            im = re.match(r"^issues/([^/]+)(?:/([\w-]+)(?:/([^/]+))?)?$", rest)
             if im:
-                issue_id, action = im.group(1), im.group(2)
+                issue_id, action, sub_id = im.group(1), im.group(2), im.group(3)
                 issue = state.issues.get(issue_id)
                 if not issue:
                     return self._send(404, errors=[{"code": "not_found", "message": "Issue not found."}])
@@ -323,6 +323,40 @@ def make_handler(state: FakeState):
                         return self._send(409, errors=[{"code": "invalid_transition", "message": "Issue already closed."}])
                     issue.update(state="done", closure_reason=body.get("reason"))
                     return self._send(200, issue)
+                if action == "link-task" and method == "POST":
+                    issue["tasks"].append({"id": body["task_id"]})
+                    return self._send(200, issue)
+                if action == "request-approval" and method == "POST":
+                    if issue["state"] not in ("in_progress", "blocked"):
+                        return self._send(
+                            422,
+                            errors=[{"code": "invalid_state", "message": "Issue must be in_progress or blocked."}],
+                        )
+                    issue["approvals"].append({
+                        "id": state.next_id("appr"),
+                        "summary": body["summary"],
+                        "recommended_action": body.get("recommended_action"),
+                        "risks": body.get("risks"),
+                        "status": "pending",
+                    })
+                    issue["state"] = "blocked"
+                    return self._send(201, issue)
+                if action == "dependencies" and method == "POST":
+                    dep = {
+                        "id": state.next_id("dep"),
+                        "depends_on_issue_id": body["depends_on_issue_id"],
+                        "kind": body["kind"],
+                    }
+                    issue["dependencies"].append(dep)
+                    return self._send(201, dep)
+                if action == "dependencies" and sub_id and method == "DELETE":
+                    issue["dependencies"] = [
+                        d for d in issue["dependencies"] if d["id"] != sub_id
+                    ]
+                    self.send_response(204)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return None
 
             # ---- tracks ----
             if rest == "tracks" and method == "GET":

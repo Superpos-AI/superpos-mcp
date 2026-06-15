@@ -62,7 +62,7 @@ Run `superpos-mcp doctor` any time to see resolved config and test connectivity.
 | Events | `superpos_publish_event`, `superpos_poll_events` |
 | Knowledge | `superpos_search_knowledge`, `superpos_list_knowledge`, `superpos_get_knowledge`, `superpos_create_knowledge`, `superpos_update_knowledge` |
 | Schedules | `superpos_list_schedules`, `superpos_create_schedule`, `superpos_delete_schedule` |
-| Issues | `superpos_list_issues`, `superpos_get_issue`, `superpos_create_issue`, `superpos_update_issue`, `superpos_transition_issue`, `superpos_close_issue` |
+| Issues | `superpos_list_issues`, `superpos_get_issue`, `superpos_create_issue`, `superpos_update_issue`, `superpos_transition_issue`, `superpos_close_issue`, `superpos_list_issue_types`, `superpos_link_task_to_issue`, `superpos_request_issue_approval`, `superpos_add_issue_dependency`, `superpos_remove_issue_dependency` |
 | Tracks | `superpos_list_tracks`, `superpos_get_track`, `superpos_create_track`, `superpos_update_track`, `superpos_transition_track`, `superpos_link_issue`, `superpos_unlink_issue` |
 | Topology | `superpos_hive_map` |
 | Discovery | `superpos_list_hives`, `superpos_hive_agents` |
