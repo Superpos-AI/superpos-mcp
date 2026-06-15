@@ -275,7 +275,16 @@ def make_handler(state: FakeState):
 
             if rest == "issues" and method == "POST":
                 if body.get("issue_type_id") not in state.issue_types:
-                    return self._send(422, errors=[{"code": "validation_error", "message": "Unknown issue_type_id.", "field": "issue_type_id"}])
+                    return self._send(
+                        422,
+                        errors=[
+                            {
+                                "code": "validation_error",
+                                "message": "Unknown issue_type_id.",
+                                "field": "issue_type_id",
+                            }
+                        ],
+                    )
                 issue = {
                     "id": state.next_id("issue"),
                     "hive_id": hive,
@@ -296,9 +305,9 @@ def make_handler(state: FakeState):
                 state.issues[issue["id"]] = issue
                 return self._send(201, issue)
 
-            im = re.match(r"^issues/([^/]+)(?:/(\w+))?$", rest)
+            im = re.match(r"^issues/([^/]+)(?:/([\w-]+)(?:/([^/]+))?)?$", rest)
             if im:
-                issue_id, action = im.group(1), im.group(2)
+                issue_id, action, sub_id = im.group(1), im.group(2), im.group(3)
                 issue = state.issues.get(issue_id)
                 if not issue:
                     return self._send(404, errors=[{"code": "not_found", "message": "Issue not found."}])
@@ -313,16 +322,77 @@ def make_handler(state: FakeState):
                     return self._send(200, issue)
                 if action == "transition" and method == "POST":
                     if body.get("to") not in ISSUE_STATES:
-                        return self._send(422, errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}])
+                        return self._send(
+                            422,
+                            errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}],
+                        )
                     if issue["state"] in ISSUE_TERMINAL_STATES:
-                        return self._send(409, errors=[{"code": "invalid_transition", "message": "Issue is in a terminal state."}])
+                        return self._send(
+                            409,
+                            errors=[{"code": "invalid_transition", "message": "Issue is in a terminal state."}],
+                        )
                     issue["state"] = body["to"]
                     return self._send(200, issue)
                 if action == "close" and method == "POST":
                     if issue["state"] in ISSUE_TERMINAL_STATES:
-                        return self._send(409, errors=[{"code": "invalid_transition", "message": "Issue already closed."}])
+                        return self._send(
+                            409,
+                            errors=[{"code": "invalid_transition", "message": "Issue already closed."}],
+                        )
                     issue.update(state="done", closure_reason=body.get("reason"))
                     return self._send(200, issue)
+                if action == "link-task" and method == "POST":
+                    issue["tasks"].append({"id": body["task_id"]})
+                    return self._send(201, {
+                        "id": state.next_id("link"),
+                        "issue_id": issue["id"],
+                    })
+                if action == "request-approval" and method == "POST":
+                    if issue["state"] not in ("in_progress", "blocked"):
+                        return self._send(
+                            422,
+                            errors=[{"code": "invalid_state", "message": "Issue must be in_progress or blocked."}],
+                        )
+                    approval = {
+                        "id": state.next_id("appr"),
+                        "approvable_id": issue["id"],
+                        "reason": body["summary"],
+                        "request_body": {
+                            "summary": body["summary"],
+                            "recommended_action": body.get("recommended_action"),
+                            "risks": body.get("risks"),
+                        },
+                        "status": "pending",
+                    }
+                    issue["approvals"].append(approval)
+                    issue["state"] = "blocked"
+                    return self._send(201, approval)
+                if action == "dependencies" and method == "POST":
+                    # Mirror the backend IssueDependency::DEPENDENCY_KINDS allowlist.
+                    if body["kind"] not in ("blocks", "related"):
+                        return self._send(
+                            422,
+                            errors=[{
+                                "code": "validation_error",
+                                "message": "Invalid dependency kind.",
+                                "field": "kind",
+                            }],
+                        )
+                    dep = {
+                        "id": state.next_id("dep"),
+                        "depends_on_issue_id": body["depends_on_issue_id"],
+                        "kind": body["kind"],
+                    }
+                    issue["dependencies"].append(dep)
+                    return self._send(201, dep)
+                if action == "dependencies" and sub_id and method == "DELETE":
+                    issue["dependencies"] = [
+                        d for d in issue["dependencies"] if d["id"] != sub_id
+                    ]
+                    self.send_response(204)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return None
 
             # ---- tracks ----
             if rest == "tracks" and method == "GET":
@@ -332,7 +402,10 @@ def make_handler(state: FakeState):
 
             if rest == "tracks" and method == "POST":
                 if body["slug"] in state.tracks:
-                    return self._send(422, errors=[{"code": "validation_error", "message": "Slug already taken.", "field": "slug"}])
+                    return self._send(
+                        422,
+                        errors=[{"code": "validation_error", "message": "Slug already taken.", "field": "slug"}],
+                    )
                 track = {
                     "id": state.next_id("track"),
                     "hive_id": hive,
@@ -360,7 +433,10 @@ def make_handler(state: FakeState):
                     return self._send(200, track)
                 if sub == "transition" and method == "POST":
                     if body.get("to") not in TRACK_STATES:
-                        return self._send(422, errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}])
+                        return self._send(
+                            422,
+                            errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}],
+                        )
                     track["state"] = body["to"]
                     return self._send(200, track)
                 if sub == "issues" and method == "GET":
@@ -369,7 +445,10 @@ def make_handler(state: FakeState):
                 if sub == "issues" and method == "POST":
                     issue = state.issues.get(body.get("issue_id"))
                     if not issue:
-                        return self._send(422, errors=[{"code": "validation_error", "message": "Unknown issue_id.", "field": "issue_id"}])
+                        return self._send(
+                            422,
+                            errors=[{"code": "validation_error", "message": "Unknown issue_id.", "field": "issue_id"}],
+                        )
                     issue["track_id"] = track["id"]
                     return self._send(200, {"track_id": track["id"], "issue_id": issue["id"]})
                 lm = re.match(r"^issues/([^/]+)$", sub or "")

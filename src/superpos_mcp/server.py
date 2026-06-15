@@ -481,6 +481,79 @@ def create_server(config: Config | None = None) -> FastMCP:
             json=body or None,
         )
 
+    @mcp.tool()
+    def superpos_list_issue_types(hive_id: str | None = None) -> list[dict[str, Any]]:
+        """List the hive's issue-type catalogue (id, key, label, closure_policy).
+        Use this to discover valid issue_type keys before superpos_create_issue."""
+        return api.request(
+            "GET", f"/api/v1/hives/{api.hive(hive_id)}/issue-types"
+        ) or []
+
+    @mcp.tool()
+    def superpos_link_task_to_issue(
+        issue_id: str,
+        task_id: str,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach an existing task to an issue so the work stays traceable — e.g.
+        when you spawn a subtask (superpos_create_task) to resolve the issue."""
+        return api.request(
+            "POST",
+            f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}/link-task",
+            json={"task_id": task_id},
+        )
+
+    @mcp.tool()
+    def superpos_request_issue_approval(
+        issue_id: str,
+        summary: str,
+        recommended_action: str | None = None,
+        risks: list[str] | None = None,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Escalate an issue for human approval (e.g. before closing risky work).
+        Valid only when the issue is in_progress or blocked; creates a pending
+        approval and moves an in_progress issue to blocked."""
+        body: dict[str, Any] = {"summary": summary}
+        if recommended_action:
+            body["recommended_action"] = recommended_action
+        if risks:
+            body["risks"] = risks
+        return api.request(
+            "POST",
+            f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}/request-approval",
+            json=body,
+        )
+
+    @mcp.tool()
+    def superpos_add_issue_dependency(
+        issue_id: str,
+        depends_on_issue_id: str,
+        kind: str = "blocks",
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Declare that this issue depends on another. kind is the relationship
+        (one of 'blocks', 'related'). Returns the created dependency row."""
+        return api.request(
+            "POST",
+            f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}/dependencies",
+            json={"depends_on_issue_id": depends_on_issue_id, "kind": kind},
+        )
+
+    @mcp.tool()
+    def superpos_remove_issue_dependency(
+        issue_id: str,
+        dependency_id: str,
+        hive_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Drop a dependency row by its id (visible under dependencies[] on the
+        issue from superpos_get_issue)."""
+        api.request(
+            "DELETE",
+            f"/api/v1/hives/{api.hive(hive_id)}/issues/{issue_id}/dependencies/{dependency_id}",
+        )
+        return {"removed": True, "issue_id": issue_id, "dependency_id": dependency_id}
+
     # ------------------------------------------------------------------
     # Tracks (multi-issue containers)
     # ------------------------------------------------------------------

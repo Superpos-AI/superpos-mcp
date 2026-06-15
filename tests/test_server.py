@@ -43,6 +43,9 @@ async def test_lists_all_tools(fake):
         "superpos_list_schedules", "superpos_create_schedule", "superpos_delete_schedule",
         "superpos_list_issues", "superpos_get_issue", "superpos_create_issue",
         "superpos_update_issue", "superpos_transition_issue", "superpos_close_issue",
+        "superpos_list_issue_types", "superpos_link_task_to_issue",
+        "superpos_request_issue_approval", "superpos_add_issue_dependency",
+        "superpos_remove_issue_dependency",
         "superpos_list_tracks", "superpos_get_track", "superpos_create_track",
         "superpos_update_track", "superpos_transition_track",
         "superpos_link_issue", "superpos_unlink_issue",
@@ -223,6 +226,74 @@ async def test_create_issue_assignee_shorthand(fake):
         })
     assert issue["assignee_type"] == "App\\Models\\Agent"
     assert issue["assignee_id"] == "agent-1"
+
+
+async def test_issue_types_link_approval_and_dependencies(fake):
+    server = make_server(fake)
+    async with client_session(server._mcp_server) as client:
+        _, types = await call(client, "superpos_list_issue_types")
+        assert {t["key"] for t in types} >= {"task", "bug"}
+
+        _, issue = await call(client, "superpos_create_issue", {"title": "Ship it"})
+
+        # Link a task for traceability.
+        _, task = await call(client, "superpos_create_task", {"task_type": "build"})
+        _, linked = await call(client, "superpos_link_task_to_issue", {
+            "issue_id": issue["id"], "task_id": task["id"],
+        })
+        # link-task returns a link row, not the full issue; refresh via get_issue.
+        assert linked["issue_id"] == issue["id"]
+        assert "id" in linked
+        _, refreshed = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
+        assert [t["id"] for t in refreshed["tasks"]] == [task["id"]]
+
+        # A dependency on another issue, then remove it.
+        _, other = await call(client, "superpos_create_issue", {"title": "Prereq"})
+        _, dep = await call(client, "superpos_add_issue_dependency", {
+            "issue_id": issue["id"], "depends_on_issue_id": other["id"],
+        })
+        assert dep["kind"] == "blocks"
+        _, removed = await call(client, "superpos_remove_issue_dependency", {
+            "issue_id": issue["id"], "dependency_id": dep["id"],
+        })
+        assert removed["removed"] is True
+        _, after = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
+        assert after["dependencies"] == []
+
+        # The non-default valid kind ('related') is accepted by the backend.
+        _, related = await call(client, "superpos_add_issue_dependency", {
+            "issue_id": issue["id"], "depends_on_issue_id": other["id"],
+            "kind": "related",
+        })
+        assert related["kind"] == "related"
+        await call(client, "superpos_remove_issue_dependency", {
+            "issue_id": issue["id"], "dependency_id": related["id"],
+        })
+
+        # Approval is only valid from in_progress/blocked; it moves the issue to blocked.
+        await call(client, "superpos_transition_issue", {
+            "issue_id": issue["id"], "to": "in_progress",
+        })
+        _, escalated = await call(client, "superpos_request_issue_approval", {
+            "issue_id": issue["id"], "summary": "Needs human sign-off",
+            "recommended_action": "approve_closure",
+            "risks": ["data loss", "downtime"],
+        })
+        # request-approval returns the ApprovalRequest row, not the full issue:
+        # the request payload lives under request_body, not as top-level fields.
+        assert escalated["approvable_id"] == issue["id"]
+        assert escalated["reason"] == "Needs human sign-off"
+        assert escalated["status"] == "pending"
+        assert "issue_id" not in escalated
+        assert "summary" not in escalated
+        assert "risks" not in escalated
+        assert escalated["request_body"]["summary"] == "Needs human sign-off"
+        assert escalated["request_body"]["recommended_action"] == "approve_closure"
+        assert escalated["request_body"]["risks"] == ["data loss", "downtime"]
+        # The mutation moves the issue to blocked; refresh via get_issue to see it.
+        _, after_approval = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
+        assert after_approval["state"] == "blocked"
+        assert after_approval["approvals"][0]["status"] == "pending"
 
 
 async def test_track_lifecycle(fake):
