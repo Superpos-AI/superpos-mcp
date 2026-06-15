@@ -1,0 +1,44 @@
+name: Release
+
+# Publish to PyPI when a version tag is pushed, e.g.:
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Uses PyPI Trusted Publishing (OIDC) — no API token secret needed. One-time
+# setup: on PyPI, add a trusted publisher for this repo
+# (Superpos-AI/superpos-mcp), workflow `release.yml`, environment `pypi`.
+# Until that's configured (or before the project exists on PyPI), the publish
+# step will fail; the build + version-guard steps still validate the tag.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # required for Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Guard — tag must match package version
+        run: |
+          version=$(grep -oE '__version__ = "[^"]+"' src/superpos_mcp/__init__.py | cut -d'"' -f2)
+          tag="${GITHUB_REF_NAME#v}"
+          echo "package version: $version | tag: $tag"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match __version__ $version — bump src/superpos_mcp/__init__.py first"
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1

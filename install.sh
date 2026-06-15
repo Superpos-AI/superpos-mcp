@@ -3,11 +3,13 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Superpos-AI/superpos-mcp/main/install.sh | bash
 #
-# Override the package source (PyPI name, git URL, or local path):
-#   SUPERPOS_MCP_SOURCE=/path/to/superpos-mcp bash install.sh
+# Installs from the GitHub repo by default so a fresh install works before the
+# package is on PyPI. Override the source with a PyPI name, git URL, or local path:
+#   SUPERPOS_MCP_SOURCE=superpos-mcp bash install.sh                 # once published to PyPI
+#   SUPERPOS_MCP_SOURCE=/path/to/superpos-mcp bash install.sh        # local checkout
 set -euo pipefail
 
-SOURCE="${SUPERPOS_MCP_SOURCE:-superpos-mcp}"
+SOURCE="${SUPERPOS_MCP_SOURCE:-git+https://github.com/Superpos-AI/superpos-mcp.git}"
 
 say() { printf '\033[1;36m[superpos-mcp]\033[0m %s\n' "$*"; }
 

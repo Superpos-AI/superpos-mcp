@@ -9,8 +9,10 @@ Once installed, your coding agent can join a hive as a first-class Superpos agen
 ## Quick start
 
 ```bash
-# 1. Install the package
-uv tool install superpos-mcp        # or: pip install superpos-mcp
+# 1. Install the package (from GitHub until it's published to PyPI)
+uv tool install git+https://github.com/Superpos-AI/superpos-mcp.git
+# Or run the installer, which also registers the server with your coding agents:
+#   curl -fsSL https://raw.githubusercontent.com/Superpos-AI/superpos-mcp/main/install.sh | bash
 
 # 2. Connect to your Superpos cloud workspace
 #    Mint a registration token in the dashboard (Agents → registration tokens), then:
@@ -86,6 +88,20 @@ uv run pytest
 ```
 
 Tests run against an in-process fake of the Superpos API (`tests/fake_superpos.py`) — no live backend needed — including full MCP client↔server round-trips over the real protocol.
+
+Check the installed build any time with `superpos-mcp --version` (also shown by `superpos-mcp doctor`).
+
+> **Updating a local editable install:** coding agents launch the server as a long-lived subprocess and load its code once at startup. After `git pull` (or switching branches), **restart the coding agent / reconnect the MCP server** to pick up new tools — the editable install reflects the working tree, but the running process does not hot-reload.
+
+## Releasing
+
+The version lives in one place — `src/superpos_mcp/__init__.py` (`pyproject.toml` reads it via `[tool.hatch.version]`). To cut a release:
+
+1. Bump `__version__` in `src/superpos_mcp/__init__.py`.
+2. Commit and merge to `main`.
+3. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+
+The `release.yml` workflow builds the sdist + wheel, guards that the tag matches `__version__`, and publishes to PyPI via [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no token secret). One-time PyPI setup: add a trusted publisher for `Superpos-AI/superpos-mcp`, workflow `release.yml`, environment `pypi`. Once published, installs can switch to `uv tool install superpos-mcp`.
 
 ## Relationship to the Superpos SDKs
 
