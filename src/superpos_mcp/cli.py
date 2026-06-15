@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .client import SuperposApi, SuperposError
 from .config import (
     DEFAULT_CLOUD_BASE_URL,
@@ -31,6 +32,9 @@ from .config import (
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="superpos-mcp", description=__doc__)
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"superpos-mcp {__version__}"
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("serve", help="run the stdio MCP server (default)")
@@ -340,6 +344,7 @@ def _mask(value: str | None) -> str:
 
 def cmd_doctor() -> int:
     cfg = Config.load()
+    print(f"version          : superpos-mcp {__version__}")
     print(f"credentials file : {credentials_path()} ({'exists' if credentials_path().exists() else 'missing'})")
     print(f"base_url         : {cfg.base_url}")
     print(f"hive_id          : {cfg.hive_id or '(not set)'}")

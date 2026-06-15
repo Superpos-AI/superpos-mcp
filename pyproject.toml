@@ -1,6 +1,6 @@
 [project]
 name = "superpos-mcp"
-version = "0.1.0"
+dynamic = ["version"]
 description = "MCP server that connects any coding agent (Claude Code, Codex, Cursor, Gemini CLI, ...) to a Superpos cloud workspace."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,6 +11,11 @@ dependencies = [
     "mcp>=1.2,<2",
     "httpx>=0.27,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Superpos-AI/superpos-mcp"
+Repository = "https://github.com/Superpos-AI/superpos-mcp"
+Issues = "https://github.com/Superpos-AI/superpos-mcp/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -25,6 +30,10 @@ superpos-mcp = "superpos_mcp.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Single source of truth for the version: src/superpos_mcp/__init__.py.
+[tool.hatch.version]
+path = "src/superpos_mcp/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/superpos_mcp"]
