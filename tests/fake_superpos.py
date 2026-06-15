@@ -275,7 +275,16 @@ def make_handler(state: FakeState):
 
             if rest == "issues" and method == "POST":
                 if body.get("issue_type_id") not in state.issue_types:
-                    return self._send(422, errors=[{"code": "validation_error", "message": "Unknown issue_type_id.", "field": "issue_type_id"}])
+                    return self._send(
+                        422,
+                        errors=[
+                            {
+                                "code": "validation_error",
+                                "message": "Unknown issue_type_id.",
+                                "field": "issue_type_id",
+                            }
+                        ],
+                    )
                 issue = {
                     "id": state.next_id("issue"),
                     "hive_id": hive,
@@ -313,14 +322,23 @@ def make_handler(state: FakeState):
                     return self._send(200, issue)
                 if action == "transition" and method == "POST":
                     if body.get("to") not in ISSUE_STATES:
-                        return self._send(422, errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}])
+                        return self._send(
+                            422,
+                            errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}],
+                        )
                     if issue["state"] in ISSUE_TERMINAL_STATES:
-                        return self._send(409, errors=[{"code": "invalid_transition", "message": "Issue is in a terminal state."}])
+                        return self._send(
+                            409,
+                            errors=[{"code": "invalid_transition", "message": "Issue is in a terminal state."}],
+                        )
                     issue["state"] = body["to"]
                     return self._send(200, issue)
                 if action == "close" and method == "POST":
                     if issue["state"] in ISSUE_TERMINAL_STATES:
-                        return self._send(409, errors=[{"code": "invalid_transition", "message": "Issue already closed."}])
+                        return self._send(
+                            409,
+                            errors=[{"code": "invalid_transition", "message": "Issue already closed."}],
+                        )
                     issue.update(state="done", closure_reason=body.get("reason"))
                     return self._send(200, issue)
                 if action == "link-task" and method == "POST":
@@ -366,7 +384,10 @@ def make_handler(state: FakeState):
 
             if rest == "tracks" and method == "POST":
                 if body["slug"] in state.tracks:
-                    return self._send(422, errors=[{"code": "validation_error", "message": "Slug already taken.", "field": "slug"}])
+                    return self._send(
+                        422,
+                        errors=[{"code": "validation_error", "message": "Slug already taken.", "field": "slug"}],
+                    )
                 track = {
                     "id": state.next_id("track"),
                     "hive_id": hive,
@@ -394,7 +415,10 @@ def make_handler(state: FakeState):
                     return self._send(200, track)
                 if sub == "transition" and method == "POST":
                     if body.get("to") not in TRACK_STATES:
-                        return self._send(422, errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}])
+                        return self._send(
+                            422,
+                            errors=[{"code": "validation_error", "message": "Invalid state.", "field": "to"}],
+                        )
                     track["state"] = body["to"]
                     return self._send(200, track)
                 if sub == "issues" and method == "GET":
@@ -403,7 +427,10 @@ def make_handler(state: FakeState):
                 if sub == "issues" and method == "POST":
                     issue = state.issues.get(body.get("issue_id"))
                     if not issue:
-                        return self._send(422, errors=[{"code": "validation_error", "message": "Unknown issue_id.", "field": "issue_id"}])
+                        return self._send(
+                            422,
+                            errors=[{"code": "validation_error", "message": "Unknown issue_id.", "field": "issue_id"}],
+                        )
                     issue["track_id"] = track["id"]
                     return self._send(200, {"track_id": track["id"], "issue_id": issue["id"]})
                 lm = re.match(r"^issues/([^/]+)$", sub or "")
