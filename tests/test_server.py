@@ -269,10 +269,17 @@ async def test_issue_types_link_approval_and_dependencies(fake):
             "recommended_action": "approve_closure",
             "risks": ["data loss", "downtime"],
         })
-        # request-approval returns the approval row, not the full issue.
-        assert escalated["issue_id"] == issue["id"]
+        # request-approval returns the ApprovalRequest row, not the full issue:
+        # the request payload lives under request_body, not as top-level fields.
+        assert escalated["approvable_id"] == issue["id"]
+        assert escalated["reason"] == "Needs human sign-off"
         assert escalated["status"] == "pending"
-        assert escalated["risks"] == ["data loss", "downtime"]
+        assert "issue_id" not in escalated
+        assert "summary" not in escalated
+        assert "risks" not in escalated
+        assert escalated["request_body"]["summary"] == "Needs human sign-off"
+        assert escalated["request_body"]["recommended_action"] == "approve_closure"
+        assert escalated["request_body"]["risks"] == ["data loss", "downtime"]
         # The mutation moves the issue to blocked; refresh via get_issue to see it.
         _, after_approval = await call(client, "superpos_get_issue", {"issue_id": issue["id"]})
         assert after_approval["state"] == "blocked"

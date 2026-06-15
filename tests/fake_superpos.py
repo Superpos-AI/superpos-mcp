@@ -355,10 +355,13 @@ def make_handler(state: FakeState):
                         )
                     approval = {
                         "id": state.next_id("appr"),
-                        "issue_id": issue["id"],
-                        "summary": body["summary"],
-                        "recommended_action": body.get("recommended_action"),
-                        "risks": body.get("risks"),
+                        "approvable_id": issue["id"],
+                        "reason": body["summary"],
+                        "request_body": {
+                            "summary": body["summary"],
+                            "recommended_action": body.get("recommended_action"),
+                            "risks": body.get("risks"),
+                        },
                         "status": "pending",
                     }
                     issue["approvals"].append(approval)
