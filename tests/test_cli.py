@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 
-from superpos_mcp import cli
+import pytest
+
+from superpos_mcp import __version__, cli
 from superpos_mcp.config import read_credentials
 
 
@@ -133,3 +135,18 @@ def test_doctor_reports_missing(capsys):
     out = capsys.readouterr().out
     assert rc == 1
     assert "missing" in out
+
+
+def test_version_flag_prints_version(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["--version"])
+    assert excinfo.value.code == 0
+    out = capsys.readouterr().out
+    assert f"superpos-mcp {__version__}" in out
+    assert "superpos-mcp 0.2.0" in out
+
+
+def test_doctor_includes_version_line(capsys):
+    cli.main(["doctor"])
+    out = capsys.readouterr().out
+    assert f"version          : superpos-mcp {__version__}" in out
